@@ -13,15 +13,87 @@
         let somDerrota = new Audio("sounds/lose.mp3");
         let somNivelUp = new Audio("sounds/levelup.mp3");
         let somClick = new Audio("sounds/click.mp3");
+        somClick.volume = 0.5; // Volume otimizado para click
         // escolher faixa inicial conforme modoHardcore salvo
         let musicaFundo = new Audio(modoHardcore ? "sounds/musicadefundo2.mp3" : "sounds/musicadefundo1.mp3");
+        let musicaBoss = new Audio("sounds/musicadoboss.mp3");
         musicaFundo.loop = true;
         musicaFundo.volume = 0.3;
+        musicaBoss.loop = true;
+        musicaBoss.volume = 0.3;
         // estado da música (persistido)
         let musicaAtiva = localStorage.getItem("musicaAtiva") !== "false";
+        let estaNoBoss = false; // Rastreia se está na fase do boss
+
+        // Função para tocar sons com sincronização correta
+        function tocarSom(audio) {
+            try {
+                audio.currentTime = 0; // Reinicia do início
+                audio.play().catch(e => console.log("Erro ao tocar som:", e));
+            } catch (e) {
+                console.log("Erro ao tocar som:", e);
+            }
+        }
+
+        // Função para tocar som com ducking (abaixa música de fundo)
+        function tocarSomComDucking(audio, duracao = 2000) {
+            try {
+                // Abaixa volume da música de fundo
+                const volumeOriginal = 0.3;
+                if (estaNoBoss) {
+                    musicaBoss.volume = 0.1;
+                } else {
+                    musicaFundo.volume = 0.1;
+                }
+                
+                audio.currentTime = 0;
+                audio.play().catch(e => console.log("Erro ao tocar som:", e));
+                
+                // Restaura volume original após a duração do som
+                setTimeout(() => {
+                    if (estaNoBoss) {
+                        musicaBoss.volume = volumeOriginal;
+                    } else {
+                        musicaFundo.volume = volumeOriginal;
+                    }
+                }, duracao);
+            } catch (e) {
+                console.log("Erro ao tocar som com ducking:", e);
+            }
+        }
+
+        // Função para trocar música do boss
+        function trocarParaMusicaBoss() {
+            if (!estaNoBoss && nivel >= 3 && musicaAtiva) {
+                estaNoBoss = true;
+                musicaFundo.pause();
+                musicaBoss.currentTime = 0;
+                musicaBoss.play().catch(e => console.log("Erro ao tocar música do boss:", e));
+            }
+        }
+
+        // Função para voltar música normal
+        function voltarMusicaNormal() {
+            if (estaNoBoss && nivel < 3 && musicaAtiva) {
+                estaNoBoss = false;
+                musicaBoss.pause();
+                musicaFundo.currentTime = 0;
+                musicaFundo.play().catch(e => console.log("Erro ao tocar música normal:", e));
+            }
+        }
 document.getElementById("ranking").innerText = ranking;
 document.getElementById("xp").innerText = xp;
 document.getElementById("nivel").innerText = nivel;
+
+// Inicializar música do boss se nível >= 3
+if (nivel >= 3) {
+    estaNoBoss = true;
+    if (musicaAtiva) {
+        try {
+            musicaBoss.play().catch(e => console.log("Erro ao tocar música do boss no carregamento:", e));
+        } catch (e) {}
+    }
+}
 
 function desbloquearConquista(nome) {
     if (!conquistas.includes(nome)) {
@@ -35,16 +107,20 @@ function toggleHardcore() {
 
     localStorage.setItem("modoHardcore", modoHardcore);
 
-    // trocar faixa de fundo conforme modo
+    // trocar faixa de fundo conforme modo (não afeta música do boss)
     try {
-        musicaFundo.src = modoHardcore ? "sounds/musicadefundo2.mp3" : "sounds/musicadefundo1.mp3";
-        // se música ativa, reiniciar e tocar nova faixa
-        if (musicaAtiva) {
-            musicaFundo.pause();
-            musicaFundo.currentTime = 0;
-            musicaFundo.play();
+        if (!estaNoBoss) {
+            musicaFundo.src = modoHardcore ? "sounds/musicadefundo2.mp3" : "sounds/musicadefundo1.mp3";
+            // se música ativa e não está no boss, reiniciar e tocar nova faixa
+            if (musicaAtiva) {
+                musicaFundo.pause();
+                musicaFundo.currentTime = 0;
+                musicaFundo.play().catch(e => console.log("Erro ao tocar música:", e));
+            }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.log("Erro ao trocar música:", e);
+    }
 
     atualizarBotaoHardcore();
 }
@@ -76,10 +152,17 @@ function toggleMusica() {
     localStorage.setItem("musicaAtiva", musicaAtiva);
 
     if (musicaAtiva) {
-        musicaFundo.play();
+        if (estaNoBoss) {
+            musicaBoss.currentTime = 0;
+            musicaBoss.play().catch(e => console.log("Erro ao tocar música do boss:", e));
+        } else {
+            musicaFundo.currentTime = 0;
+            musicaFundo.play().catch(e => console.log("Erro ao tocar música:", e));
+        }
         document.getElementById("botaoMusica").innerText = "🎵 Música: ON";
     } else {
         musicaFundo.pause();
+        musicaBoss.pause();
         document.getElementById("botaoMusica").innerText = "🔇 Música: OFF";
     }
 }
@@ -94,12 +177,15 @@ function tituloPorNivel() {
     return "👑 Lenda";
 }
 function tocarClick() {
-    somClick.play();
+    tocarSom(somClick);
 }    
 function jogar() {
-    somClick.play();
+    tocarSom(somClick);
     if (typeof musicaAtiva === 'undefined' || musicaAtiva) {
-        if (musicaFundo.paused) musicaFundo.play();
+        if (musicaFundo.paused) {
+            musicaFundo.currentTime = 0;
+            musicaFundo.play().catch(e => console.log("Erro ao tocar música:", e));
+        }
     }
 
     let escolhaUsuario = document.getElementById("escolha").value;
@@ -172,7 +258,7 @@ function jogar() {
 
         document.getElementById("resultado").innerText =
             `🔥 Você ganhou! PC: ${numeroComputador} | Soma: ${soma} (${resultado})`;
-        try { somVitoria.play(); } catch (e) {}
+        tocarSom(somVitoria);
 
     } else {
 
@@ -183,7 +269,7 @@ function jogar() {
 
         document.getElementById("resultado").innerText =
             `💀 Você perdeu! PC: ${numeroComputador} | Soma: ${soma} (${resultado})`;
-        try { somDerrota.play(); } catch (e) {}
+        tocarSom(somDerrota);
     }
 
     if (xp >= nivel * 50) {
@@ -191,7 +277,15 @@ function jogar() {
         nivel++;
         document.getElementById("mensagemNivel").innerText =
             "🚀 SUBIU DE NÍVEL!";
-        try { somNivelUp.play(); } catch (e) {}
+        tocarSomComDucking(somNivelUp, 2500); // Abaixa música enquanto toca som de level up
+        // Trocar para música do boss se atingiu nível 3
+        if (nivel >= 3) {
+            trocarParaMusicaBoss();
+        }
+        // Limpar mensagem após 3 segundos
+        setTimeout(() => {
+            document.getElementById("mensagemNivel").innerText = "";
+        }, 3000);
     }
     if (vitoriasSeguidas >= 5) {
     desbloquearConquista("🥇 5 Vitórias Seguidas");
